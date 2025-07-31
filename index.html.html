@@ -1,125 +1,183 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Meme War</title>
-  <script src="https://unpkg.com/@wagmi/core@0.10.0/dist/index.umd.js"></script>
-  <script src="https://unpkg.com/wagmi@0.10.0/dist/index.umd.js"></script>
-  <script src="https://unpkg.com/@rainbow-me/rainbowkit@1.0.3/dist/index.umd.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/@rainbow-me/rainbowkit@1.0.3/dist/index.css" />
-  <style>
-    body { font-family: system-ui, sans-serif; padding: 20px; text-align: center; }
-    .meme-preview { position: relative; width: 100%; max-width: 500px; margin: 20px auto; }
-    .top-text, .bottom-text { 
-      position: absolute; left: 0; width: 100%; 
-      font-weight: bold; color: white; 
-      text-shadow: 2px 2px 4px black, -2px -2px 4px black; 
-      font-size: 24px; 
+import { useState } from "react";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import "@rainbow-me/rainbowkit/styles.css";
+import { useAccount, useSigner } from "wagmi";
+import { createMedia } from "@zoralabs/zdk";
+
+export default function Home() {
+  const { isConnected } = useAccount();
+  const { data: signer } = useSigner();
+  const [image, setImage] = useState(null);
+  const [topText, setTopText] = useState("");
+  const [bottomText, setBottomText] = useState("");
+  const [isMinting, setIsMinting] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+
+  const handleImage = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setImage(url);
     }
-    .top-text { top: 10px; text-align: top; }
-    .bottom-text { bottom: 10px; text-align: bottom; }
-    button { padding: 12px 24px; background: #000; color: #fff; border: none; border-radius: 6px; font-size: 16px; margin: 10px; cursor: pointer; }
-    input { display: block; margin: 10px auto; padding: 8px; width: 80%; max-width: 400px; }
-    #imagePreview { max-width: 100%; max-height: 400px; margin: 10px auto; display: block; }
-  </style>
-</head>
-<body>
-  <h1>Meme War</h1>
-  <p>Make a meme. Mint it. Own the chaos.</p>
+  };
 
-  <input type="file" id="imageUpload" accept="image/*" />
-  <input type="text" id="topText" placeholder="Top text" />
-  <input type="text" id="bottomText" placeholder="Bottom text" />
+  const uploadToIPFS = async (metadata) => {
+    const blob = new Blob([JSON.stringify(metadata)], { type: "application/json" });
+    const file = new File([blob], "metadata.json");
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("https://web3.file/api/upload", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    return `ipfs://${data.path}`;
+  };
 
-  <div class="meme-preview">
-    <img id="imagePreview" src="" style="display: none;" />
-    <p class="top-text" id="topTextPreview"></p>
-    <p class="bottom-text" id="bottomTextPreview"></p>
-  </div>
+  const mintMeme = async () => {
+    if (!signer) return alert("Wallet not connected");
+    if (!image) return alert("Upload an image");
+    setIsMinting(true);
 
-  <button onclick="connectWallet()">Connect Wallet</button>
-  <button onclick="mintMeme()">Post Meme</button>
+    const metadata = {
+      name: "Meme War Entry",
+      description: `${topText} ${bottomText}`.trim(),
+      content: `${topText}\n${bottomText}`,
+      media: [],
+      attributes: [{ trait_type: "platform", value: "memewar" }],
+    };
 
-  <script>
-    let signer;
-    const yourAddress = "0xa21e4999e6e9c7f62b7eeda4ae82e476530fa5a9"; // ✅ YOUR ADDRESS
-
-    async function connectWallet() {
-      const { createConfig, http } = wagmi;
-      const { mainnet, zora } = wagmi.chains;
-      const config = createConfig({
-        chains: [zora],
-        transports: { [zora.id]: http() },
+    try {
+      const tokenURI = await uploadToIPFS(metadata);
+      await createMedia({
+        chain: "zora",
+        params: {
+          tokenURI,
+          creatorAddress: "0xa21e4999e6e9c7f62b7eeda4ae82e476530fa5a9", // ✅ YOUR ADDRESS
+        },
+        options: {
+          signer,
+          createMediaTx: true,
+        },
       });
-      const { getSigner } = wagmi;
-      try {
-        await window.rainbowkit.connect();
-        signer = await getSigner(config);
-        alert("Wallet connected!");
-      } catch (e) {
-        console.error(e);
-        alert("Failed to connect");
-      }
+      alert("🔥 Meme minted! Check your Zora profile.");
+    } catch (err) {
+      console.error(err);
+      alert("Mint failed. Try again.");
+    } finally {
+      setIsMinting(false);
     }
+  };
 
-    async function mintMeme() {
-      if (!signer) return alert("Connect wallet first");
-      const file = document.getElementById("imageUpload").files[0];
-      if (!file) return alert("Upload an image");
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-pink-300 via-purple-300 to-indigo-400 flex flex-col items-center px-4 py-8 font-sans">
+      {/* Header */}
+      <div className="text-center max-w-2xl mb-6">
+        <h1 className="text-5xl font-extrabold text-white drop-shadow-lg mb-2">
+          MEME WAR
+        </h1>
+        <p className="text-white text-xl opacity-90">Make a meme. Mint it. Own the chaos.</p>
+      </div>
 
-      const formData = new FormData();
-      const metadata = {
-        name: "Meme War Entry",
-        description: document.getElementById("topText").value + " " + document.getElementById("bottomText").value,
-        content: document.getElementById("topText").value + "\n" + document.getElementById("bottomText").value,
-        attributes: [{ trait_type: "platform", value: "memewar" }]
-      };
-      const blob = new Blob([JSON.stringify(metadata)], { type: "application/json" });
-      formData.append("file", blob, "metadata.json");
-      formData.append("file", file);
+      {/* How It Works Button */}
+      <button
+        onClick={() => setShowModal(true)}
+        className="mb-6 text-white underline text-lg hover:text-yellow-200 transition"
+      >
+        🤔 How It Works?
+      </button>
 
-      // Upload to web3.file
-      const res = await fetch("https://web3.file/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      const tokenURI = `ipfs://${data.path}`;
+      {/* Connect Wallet */}
+      <div className="w-full max-w-md mb-6">
+        <ConnectButton />
+      </div>
 
-      // Mint on Zora
-      const createMedia = async (params) => {
-        const tx = await signer.sendTransaction({
-          to: "0x3F323852f47B27d3473b829Ac38957392479c309", // Zora Media Contract
-          data: `0x${Buffer.from(
-            JSON.stringify({
-              params: { tokenURI, creatorAddress: yourAddress },
-            })
-          ).toString("hex")}`,
-        });
-        return tx;
-      };
+      {/* Meme Editor */}
+      {isConnected && (
+        <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
+          <input type="file" accept="image/*" onChange={handleImage} className="w-full mb-4" />
 
-      try {
-        await createMedia({ tokenURI, creatorAddress: yourAddress });
-        alert("Meme minted! Check your Zora profile.");
-      } catch (err) {
-        console.error(err);
-        alert("Mint failed");
-      }
-    }
+          <input
+            placeholder="Top text"
+            value={topText}
+            onChange={(e) => setTopText(e.target.value.toUpperCase())}
+            className="w-full mb-2 p-3 border-2 border-gray-300 rounded-lg text-center font-bold text-lg"
+          />
+          <input
+            placeholder="Bottom text"
+            value={bottomText}
+            onChange={(e) => setBottomText(e.target.value.toUpperCase())}
+            className="w-full mb-4 p-3 border-2 border-gray-300 rounded-lg text-center font-bold text-lg"
+          />
 
-    document.getElementById("imageUpload").onchange = (e) => {
-      const url = URL.createObjectURL(e.target.files[0]);
-      document.getElementById("imagePreview").src = url;
-      document.getElementById("imagePreview").style.display = "block";
-    };
-    document.getElementById("topText").oninput = (e) => {
-      document.getElementById("topTextPreview").innerText = e.target.value;
-    };
-    document.getElementById("bottomText").oninput = (e) => {
-      document.getElementById("bottomTextPreview").innerText = e.target.value;
-    };
-  </script>
-</body>
-</html>
+          {image && (
+            <div className="relative mb-4 border-4 border-yellow-400 rounded-lg overflow-hidden">
+              <img src={image} alt="meme preview" className="w-full" style={{ maxHeight: 400 }} />
+              <p className="absolute top-2 left-0 right-0 text-center font-bold text-white drop-shadow-2xl text-2xl">
+                {topText}
+              </p>
+              <p className="absolute bottom-2 left-0 right-0 text-center font-bold text-white drop-shadow-2xl text-2xl">
+                {bottomText}
+              </p>
+            </div>
+          )}
+
+          <button
+            onClick={mintMeme}
+            disabled={isMinting || !image}
+            className="w-full bg-gradient-to-r from-red-500 to-pink-600 text-white py-3 rounded-xl font-bold text-lg hover:from-red-600 hover:to-pink-700 disabled:opacity-60 transition"
+          >
+            {isMinting ? "🚀 Minting..." : "💥 POST MEME"}
+          </button>
+        </div>
+      )}
+
+      {/* How It Works Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md text-center shadow-2xl">
+            <h2 className="text-3xl font-bold text-gray-800 mb-4">🎯 How It Works</h2>
+            <ol className="text-left text-gray-700 space-y-3 mb-6">
+              <li>
+                <strong>1.</strong> Connect your wallet (MetaMask, Rainbow, etc.)
+              </li>
+              <li>
+                <strong>2.</strong> Upload a meme image
+              </li>
+              <li>
+                <strong>3.</strong> Add top & bottom text
+              </li>
+              <li>
+                <strong>4.</strong> Click “POST MEME”
+              </li>
+              <li>
+                <strong>5.</strong> It mints as an NFT on Zora under your name!
+              </li>
+            </ol>
+            <p className="text-sm text-gray-500 mb-6">
+              Powered by Zora Network — gasless, fast, on-chain forever.
+            </p>
+            <button
+              onClick={() => setShowModal(false)}
+              className="bg-black text-white px-6 py-2 rounded-full hover:bg-gray-800 transition"
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <p className="text-white text-sm mt-8 opacity-80">
+        Run by{" "}
+        <a
+          href="https://zora.co/@0xa21e4999e6e9c7f62b7eeda4ae82e476530fa5a9"
+          target="_blank"
+          className="underline hover:text-yellow-200"
+        >
+          your Zora profile
+        </a>
+      </p>
+    </div>
+  );
+}
